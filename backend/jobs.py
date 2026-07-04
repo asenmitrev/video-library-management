@@ -8,7 +8,7 @@ import logging
 import queue
 import threading
 
-from . import db, indexer
+from . import db, embedder, indexer
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,16 @@ class IndexManager:
             d["queued_folders"] = list(self._pending)
             # errors can get long; cap what we ship to the UI
             d["errors"] = d["errors"][-20:]
-            return d
+        # The model may be downloading/loading via the server's warm-up
+        # thread, independent of this job's own progress object (which
+        # would otherwise still read "idle" while blocked behind it).
+        if embedder.state() == "loading_model" and d["state"] != "indexing":
+            d["state"] = "loading_model"
+        if d["state"] == "loading_model":
+            dl = embedder.download_progress()
+            d["download_bytes"] = dl["downloaded_bytes"]
+            d["download_total_bytes"] = dl["total_bytes"]
+        return d
 
     def stop(self) -> None:
         self._stop.set()

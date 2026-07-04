@@ -22,7 +22,7 @@
     <span id="progress-label">Indexing…</span>
     <span id="progress-detail"></span>
   </div>
-  <div class="progress-track"><div id="progress-fill"></div></div>
+  <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
 </div>
 
 <main>
@@ -41,6 +41,19 @@
     <p id="empty-hint" class="muted"></p>
   </div>
 </main>
+
+<dialog id="installing-dialog">
+  <h2>Setting up Video Library Search</h2>
+  <p>Downloading the vision model (~1.4 GB) — this happens once. This
+  window is disabled until it finishes.</p>
+  <p class="muted" style="margin-top: 0.6rem;">Please don't quit the app —
+  quitting now will discard the download and it will restart from the
+  beginning next time.</p>
+  <div class="progress-track" style="margin-top: 1.2rem;">
+    <div id="installing-fill" class="progress-fill indeterminate"></div>
+  </div>
+  <div id="installing-detail" class="muted" style="margin-top: 0.5rem; font-size: 0.8rem;"></div>
+</dialog>
 
 <dialog id="settings-dialog">
   <h2>Settings</h2>

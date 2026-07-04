@@ -41,6 +41,12 @@ function fmtEta(sec) {
   return `about ${(sec / 3600).toFixed(1)} h left`;
 }
 
+function fmtBytes(n) {
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(0)} MB`;
+  return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
 // Relative relevance: dots scaled against the best hit in this result set.
 function relevanceDots(score, topScore) {
   const ratio = topScore > 0 ? score / topScore : 0;
@@ -137,6 +143,20 @@ function renderResults(data) {
   }
 }
 
+// ---------- model install (blocking) ----------
+
+function showInstallingDialog() {
+  const dlg = $("installing-dialog");
+  if (!dlg.open) dlg.showModal();
+}
+function hideInstallingDialog() {
+  const dlg = $("installing-dialog");
+  if (dlg.open) dlg.close();
+}
+// Model download must run to completion; don't let Esc dismiss the modal
+// and make the rest of the UI look usable while it's still loading.
+$("installing-dialog").addEventListener("cancel", (ev) => ev.preventDefault());
+
 // ---------- indexing progress ----------
 
 async function pollStatus() {
@@ -149,6 +169,7 @@ async function pollStatus() {
   state.indexing = busy;
 
   if (st.state === "error") {
+    hideInstallingDialog();
     banner.classList.remove("hidden");
     banner.classList.add("error");
     $("progress-label").textContent = `Indexing failed: ${st.error}`;
@@ -159,6 +180,7 @@ async function pollStatus() {
   banner.classList.remove("error");
 
   if (!busy) {
+    hideInstallingDialog();
     if (!banner.classList.contains("hidden") && st.state === "done") {
       const failed = st.failed_files ? `, ${st.failed_files} failed` : "";
       $("status-line").textContent =
@@ -171,14 +193,30 @@ async function pollStatus() {
 
   banner.classList.remove("hidden");
   const fill = $("progress-fill");
+  const installingFill = $("installing-fill");
 
   if (st.state === "loading_model") {
+    const downloaded = st.download_bytes || 0;
+    const total = st.download_total_bytes;
+    let detail = "First run downloads ~1.4 GB once; afterwards this takes seconds.";
+    if (total) {
+      const pct = Math.min(100, (downloaded / total) * 100);
+      fill.classList.remove("indeterminate");
+      installingFill.classList.remove("indeterminate");
+      fill.style.width = installingFill.style.width = `${pct}%`;
+      detail = `${fmtBytes(downloaded)} / ${fmtBytes(total)} (${pct.toFixed(0)}%)`;
+    } else {
+      fill.classList.add("indeterminate");
+      installingFill.classList.add("indeterminate");
+      if (downloaded) detail = `${fmtBytes(downloaded)} downloaded…`;
+    }
     $("progress-label").textContent = "Preparing the vision model…";
-    $("progress-detail").textContent =
-      "First run downloads ~1.4 GB once; afterwards this takes seconds.";
-    fill.classList.add("indeterminate");
+    $("progress-detail").textContent = detail;
+    $("installing-detail").textContent = detail;
+    showInstallingDialog();
     return;
   }
+  hideInstallingDialog();
 
   fill.classList.remove("indeterminate");
   const processed = st.done_files + st.skipped_files + st.failed_files;
