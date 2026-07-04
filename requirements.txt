@@ -1,0 +1,16 @@
+# Core (Phase 1)
+torch>=2.12
+transformers>=5.0
+pillow
+numpy
+opencv-python-headless
+scenedetect>=0.7
+sqlite-vec>=0.1.9
+
+# Server + UI shell (Phases 2-4)
+fastapi
+uvicorn
+pywebview
+
+# Packaging (Phase 5)
+pyinstaller
