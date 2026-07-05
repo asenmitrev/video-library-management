@@ -7,6 +7,7 @@ returns immediately and search stays available while indexing runs.
 import logging
 import queue
 import threading
+from pathlib import Path
 
 from . import db, embedder, indexer
 
@@ -20,6 +21,7 @@ class IndexManager:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._progress = indexer.IndexProgress()
+        self._current: str | None = None
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
@@ -44,6 +46,25 @@ class IndexManager:
         for f in folders:
             self.enqueue(f)
         return folders
+
+    def remove_folder(self, folder: str) -> None:
+        """Stop watching a folder and delete everything indexed under it.
+
+        Raises RuntimeError if the folder is actively being indexed right
+        now (removal mid-scan could race with new rows being written).
+        """
+        with self._lock:
+            if folder == self._current:
+                raise RuntimeError("Folder is currently being indexed")
+            if folder in self._pending:
+                self._pending.remove(folder)
+        conn = db.connect()
+        try:
+            thumbs = db.remove_folder(conn, folder)
+        finally:
+            conn.close()
+        for thumb in thumbs:
+            Path(thumb).unlink(missing_ok=True)
 
     def status(self) -> dict:
         with self._lock:
@@ -71,7 +92,20 @@ class IndexManager:
                 folder = self._queue.get(timeout=0.5)
             except queue.Empty:
                 continue
+
+            conn = db.connect()
+            try:
+                still_watched = folder in db.list_folders(conn)
+            finally:
+                conn.close()
+
             with self._lock:
+                if folder in self._pending:
+                    self._pending.remove(folder)
+                if not still_watched:
+                    # Removed while queued (before its turn came up).
+                    continue
+                self._current = folder
                 self._progress = indexer.IndexProgress()
                 progress = self._progress
             try:
@@ -84,5 +118,4 @@ class IndexManager:
                 progress.error = str(exc)
             finally:
                 with self._lock:
-                    if folder in self._pending:
-                        self._pending.remove(folder)
+                    self._current = None

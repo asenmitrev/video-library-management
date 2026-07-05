@@ -61,6 +61,25 @@ def _model_cache_dir() -> Path:
     return Path(HF_HUB_CACHE) / folder_name
 
 
+def _cleanup_stale_incomplete_files(cache_dir: Path) -> None:
+    """Delete orphaned partial-download files left by a previous run that
+    was killed abruptly (force-quit, crash) rather than exiting normally.
+    huggingface_hub gives every download attempt a fresh random temp
+    filename (`_download_to_tmp_and_move` in file_download.py), so an
+    orphan from a prior process can never be resumed or reused — it's
+    just dead disk space (these can reach hundreds of MB each for the
+    weights file). Safe to call before a new attempt starts: nothing new
+    has been written yet at that point, so there's nothing active to lose."""
+    blobs_dir = cache_dir / "blobs"
+    if not blobs_dir.is_dir():
+        return
+    for f in blobs_dir.glob("*.incomplete"):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+
 def _fetch_total_bytes() -> int | None:
     try:
         from huggingface_hub import HfApi
@@ -150,6 +169,7 @@ def load_model(progress_cb=None):
         # thread) — the model never loads and no download ever starts.
         from transformers import AutoModel, AutoProcessor
 
+        _cleanup_stale_incomplete_files(_model_cache_dir())
         _start_watcher_once()
         log.info("Loading %s on %s", config.MODEL_ID, device())
         _processor = AutoProcessor.from_pretrained(config.MODEL_ID)

@@ -101,6 +101,26 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 main { max-width: 1100px; margin: 0 auto; padding: 1.6rem 1.4rem 3rem; }
 
+.tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
+.tab-btn { border: none; background: none; padding: 0.4rem 0.2rem; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; }
+.tab-btn:hover { border-color: transparent; color: var(--text); }
+.tab-btn.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+
+.browse-bar { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+.browse-path { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#browse-status { margin: 0.4rem 0.2rem 0.8rem; font-size: 0.85rem; }
+
+#search-scope {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-bottom: 0.7rem; font-size: 0.85rem; color: var(--muted);
+}
+#search-scope strong { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+#clear-scope-btn {
+  border: none; background: none; padding: 0 0.2rem; font-size: 0.8rem;
+  color: var(--muted); cursor: pointer;
+}
+#clear-scope-btn:hover { color: var(--danger); }
+
 #search-form { display: flex; gap: 0.6rem; }
 #search-input {
   flex: 1;
@@ -200,6 +220,10 @@ dialog h2 { font-size: 1rem; margin-bottom: 1rem; }
 dialog dl { font-size: 0.85rem; }
 dialog dt { color: var(--muted); margin-top: 0.7rem; }
 dialog dd { margin: 0.15rem 0 0; word-break: break-all; }
+.folder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.folder-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.folder-list .folder-path { word-break: break-all; }
+.folder-list .reveal-link { flex-shrink: 0; }
 .dialog-actions {
   display: flex;
   justify-content: space-between;

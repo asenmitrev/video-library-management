@@ -8,6 +8,7 @@ const state = {
   totalSegments: 0,
   lastQuery: null,
   pollTimer: null,
+  searchFolder: null,
 };
 
 // ---------- helpers ----------
@@ -67,11 +68,27 @@ async function runSearch(query) {
   state.lastQuery = query;
   $("status-line").textContent = "Searching…";
   try {
-    const data = await api(`/api/search?q=${encodeURIComponent(query)}&k=12`);
+    let url = `/api/search?q=${encodeURIComponent(query)}&k=12`;
+    if (state.searchFolder) url += `&folder=${encodeURIComponent(state.searchFolder)}`;
+    const data = await api(url);
     renderResults(data);
   } catch (err) {
     $("status-line").textContent = `Search failed: ${err.message}`;
   }
+}
+
+function setSearchScope(folder) {
+  state.searchFolder = folder;
+  $("search-scope").classList.toggle("hidden", !folder);
+  $("scope-path").textContent = folder || "";
+  $("scope-path").title = folder || "";
+}
+
+function searchInFolder(folder) {
+  setSearchScope(folder);
+  showTab("search");
+  $("search-input").focus();
+  if (state.lastQuery) runSearch(state.lastQuery);
 }
 
 function renderResults(data) {
@@ -141,6 +158,99 @@ function renderResults(data) {
 
     grid.appendChild(card);
   }
+}
+
+// ---------- browse ----------
+
+async function loadBrowse(path) {
+  $("browse-status").textContent = "Loading…";
+  try {
+    const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+    const data = await api(`/api/browse${qs}`);
+    renderBrowse(data);
+  } catch (err) {
+    $("browse-status").textContent = `Could not load folder: ${err.message}`;
+  }
+}
+
+function renderBrowse(data) {
+  state.browseParent = data.parent;
+  $("browse-path").textContent = data.path || "Indexed folders";
+  $("browse-path").title = data.path || "";
+  $("browse-up-btn").classList.toggle("hidden", data.path === null);
+
+  const grid = $("browse-grid");
+  grid.innerHTML = "";
+
+  if (!data.entries.length) {
+    $("browse-status").textContent = data.path === null
+      ? "No folders in your library yet. Click “+ Add folder” to get started."
+      : "Empty folder.";
+    return;
+  }
+  $("browse-status").textContent = "";
+
+  for (const e of data.entries) {
+    const card = document.createElement("div");
+    card.title = e.path;
+
+    if (e.type === "folder") {
+      card.className = "result-card folder-card";
+      card.innerHTML = `
+        <div class="thumb-wrap"><div class="no-thumb">📁</div></div>
+        <div class="card-body">
+          <div class="card-title"></div>
+          <div class="card-meta">
+            <button class="reveal-link search-in-btn">🔍 Search here</button>
+          </div>
+        </div>`;
+      card.querySelector(".card-title").textContent = e.name;
+      card.addEventListener("click", () => loadBrowse(e.path));
+      card.querySelector(".search-in-btn").addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        searchInFolder(e.path);
+      });
+      grid.appendChild(card);
+      continue;
+    }
+
+    card.className = "result-card" + (e.indexed ? "" : " missing");
+    const thumb = e.thumb_url
+      ? `<img src="${e.thumb_url}" alt="" loading="lazy">`
+      : `<div class="no-thumb">🎞</div>`;
+    card.innerHTML = `
+      <div class="thumb-wrap">${thumb}
+        ${e.duration_sec ? `<span class="timestamp">${fmtTime(e.duration_sec)}</span>` : ""}
+      </div>
+      <div class="card-body">
+        <div class="card-title"></div>
+        <div class="card-meta">
+          <span class="muted">${e.indexed ? `${e.segments} moments` : "not indexed yet"}</span>
+          <button class="reveal-link">Show in Finder</button>
+        </div>
+      </div>`;
+    card.querySelector(".card-title").textContent = e.name;
+
+    card.addEventListener("click", () => {
+      api("/api/open", { method: "POST", body: JSON.stringify({ path: e.path }) })
+        .catch((err) => { $("browse-status").textContent = err.message; });
+    });
+    card.querySelector(".reveal-link").addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      api("/api/reveal", { method: "POST", body: JSON.stringify({ path: e.path }) })
+        .catch((err) => { $("browse-status").textContent = err.message; });
+    });
+    grid.appendChild(card);
+  }
+}
+
+function showTab(tab) {
+  const isSearch = tab === "search";
+  $("tab-search").classList.toggle("active", isSearch);
+  $("tab-browse").classList.toggle("active", !isSearch);
+  $("search-view").classList.toggle("hidden", !isSearch);
+  $("browse-view").classList.toggle("hidden", isSearch);
+  if (!isSearch) loadBrowse(null);
 }
 
 // ---------- model install (blocking) ----------
@@ -275,13 +385,53 @@ async function addFolder() {
 
 // ---------- settings ----------
 
+async function refreshSettingsInfo() {
+  const [s, f] = await Promise.all([api("/api/settings"), api("/api/folders")]);
+  $("set-datadir").textContent = s.data_dir;
+  $("set-stats").textContent = `${s.files} videos, ${s.segments} moments`;
+  $("set-model").textContent = `${s.model} (${s.device})`;
+  renderFolderList(f.folders);
+}
+
+function renderFolderList(folders) {
+  const list = $("set-folders");
+  list.innerHTML = "";
+  if (!folders.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "none";
+    list.appendChild(li);
+    return;
+  }
+  for (const folder of folders) {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.className = "folder-path";
+    span.textContent = folder;
+    span.title = folder;
+    const btn = document.createElement("button");
+    btn.className = "reveal-link";
+    btn.textContent = "Remove";
+    btn.addEventListener("click", () => removeFolder(folder));
+    li.append(span, btn);
+    list.appendChild(li);
+  }
+}
+
+async function removeFolder(folder) {
+  if (!confirm(`Stop watching this folder and remove its indexed videos from the library?\n\n${folder}`)) return;
+  try {
+    await api("/api/folders/remove", { method: "POST", body: JSON.stringify({ folder }) });
+    await refreshSettingsInfo();
+    refreshLibraryInfo();
+  } catch (err) {
+    alert(`Could not remove folder: ${err.message}`);
+  }
+}
+
 async function openSettings() {
   try {
-    const [s, f] = await Promise.all([api("/api/settings"), api("/api/folders")]);
-    $("set-datadir").textContent = s.data_dir;
-    $("set-stats").textContent = `${s.files} videos, ${s.segments} moments`;
-    $("set-model").textContent = `${s.model} (${s.device})`;
-    $("set-folders").textContent = f.folders.join("\n") || "none";
+    await refreshSettingsInfo();
   } catch { /* show dialog anyway */ }
   $("settings-dialog").showModal();
 }
@@ -314,6 +464,13 @@ $("rescan-btn").addEventListener("click", async () => {
 $("settings-btn").addEventListener("click", openSettings);
 $("close-settings-btn").addEventListener("click", () => $("settings-dialog").close());
 $("reset-btn").addEventListener("click", resetLibrary);
+$("tab-search").addEventListener("click", () => showTab("search"));
+$("tab-browse").addEventListener("click", () => showTab("browse"));
+$("browse-up-btn").addEventListener("click", () => loadBrowse(state.browseParent));
+$("clear-scope-btn").addEventListener("click", () => {
+  setSearchScope(null);
+  if (state.lastQuery) runSearch(state.lastQuery);
+});
 
 refreshLibraryInfo();
 startPolling();

@@ -26,19 +26,39 @@
 </div>
 
 <main>
-  <form id="search-form" autocomplete="off">
-    <input id="search-input" type="search"
-           placeholder="Describe a moment… e.g. “a dog catching a frisbee in a park”"
-           aria-label="Search your video library">
-    <button type="submit">Search</button>
-  </form>
+  <div class="tabs">
+    <button id="tab-search" class="tab-btn active">Search</button>
+    <button id="tab-browse" class="tab-btn">Browse</button>
+  </div>
 
-  <div id="status-line" class="muted"></div>
-  <div id="results" class="results-grid"></div>
+  <div id="search-view">
+    <div id="search-scope" class="hidden">
+      Searching in <strong id="scope-path"></strong>
+      <button id="clear-scope-btn" title="Search the whole library instead">✕</button>
+    </div>
+    <form id="search-form" autocomplete="off">
+      <input id="search-input" type="search"
+             placeholder="Describe a moment… e.g. “a dog catching a frisbee in a park”"
+             aria-label="Search your video library">
+      <button type="submit">Search</button>
+    </form>
 
-  <div id="empty-state" class="empty hidden">
-    <p id="empty-title"></p>
-    <p id="empty-hint" class="muted"></p>
+    <div id="status-line" class="muted"></div>
+    <div id="results" class="results-grid"></div>
+
+    <div id="empty-state" class="empty hidden">
+      <p id="empty-title"></p>
+      <p id="empty-hint" class="muted"></p>
+    </div>
+  </div>
+
+  <div id="browse-view" class="hidden">
+    <div class="browse-bar">
+      <button id="browse-up-btn" class="hidden" title="Up one level">⬆ Up</button>
+      <span id="browse-path" class="browse-path muted"></span>
+    </div>
+    <div id="browse-status" class="muted"></div>
+    <div id="browse-grid" class="results-grid"></div>
   </div>
 </main>
 
@@ -61,7 +81,7 @@
     <dt>Library database</dt><dd id="set-datadir"></dd>
     <dt>Indexed</dt><dd id="set-stats"></dd>
     <dt>Model</dt><dd id="set-model"></dd>
-    <dt>Watched folders</dt><dd id="set-folders"></dd>
+    <dt>Watched folders</dt><dd><ul id="set-folders" class="folder-list"></ul></dd>
   </dl>
   <div class="dialog-actions">
     <button id="reset-btn" class="danger">Clear library…</button>

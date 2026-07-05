@@ -6,6 +6,7 @@ Single local file. Tables:
   vec_segments — sqlite-vec virtual table; rowid == segments.id
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -120,8 +121,14 @@ def add_segment(
 
 
 def search(
-    conn: sqlite3.Connection, query_embedding: np.ndarray, limit: int
+    conn: sqlite3.Connection,
+    query_embedding: np.ndarray,
+    limit: int,
+    folder: str | None = None,
 ) -> list[dict]:
+    # Folder scoping isn't pushed into the ANN index — over-fetch a wider
+    # candidate set and filter by path prefix in Python instead.
+    fetch_k = limit if folder is None else min(max(limit * 25, 200), 2000)
     rows = conn.execute(
         """
         SELECT s.id, f.path, s.start_sec, s.end_sec, s.thumb_path, v.distance
@@ -131,8 +138,12 @@ def search(
         WHERE v.embedding MATCH ? AND v.k = ?
         ORDER BY v.distance
         """,
-        (query_embedding.astype(np.float32).tobytes(), limit),
+        (query_embedding.astype(np.float32).tobytes(), fetch_k),
     ).fetchall()
+    if folder is not None:
+        prefix = folder.rstrip(os.sep) + os.sep
+        rows = [r for r in rows if r["path"] == folder or r["path"].startswith(prefix)]
+    rows = rows[:limit]
     return [
         {
             "segment_id": r["id"],
@@ -159,8 +170,47 @@ def list_folders(conn: sqlite3.Connection) -> list[str]:
     ]
 
 
+def remove_folder(conn: sqlite3.Connection, path: str) -> list[str]:
+    """Forget a watched folder and delete everything indexed under it.
+
+    Returns thumbnail paths to clean up. Prefix matching is done in Python
+    (as in `search`) rather than SQL LIKE, since folder paths can contain
+    '%'/'_' which are LIKE wildcards.
+    """
+    prefix = path.rstrip(os.sep) + os.sep
+    rows = conn.execute("SELECT id, path FROM files").fetchall()
+    thumbs = []
+    for r in rows:
+        if r["path"] == path or r["path"].startswith(prefix):
+            thumbs.extend(remove_file(conn, r["id"]))
+    conn.execute("DELETE FROM folders WHERE path = ?", (path,))
+    conn.commit()
+    return thumbs
+
+
 def all_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM files ORDER BY path").fetchall()
+
+
+def file_browse_info(conn: sqlite3.Connection, path: str) -> dict | None:
+    """Indexing summary for one path, for the folder browser. None if unindexed."""
+    row = get_file(conn, path)
+    if row is None:
+        return None
+    seg_count = conn.execute(
+        "SELECT COUNT(*) c FROM segments WHERE file_id = ?", (row["id"],)
+    ).fetchone()["c"]
+    thumb = conn.execute(
+        """SELECT thumb_path FROM segments
+           WHERE file_id = ? AND thumb_path IS NOT NULL
+           ORDER BY start_sec LIMIT 1""",
+        (row["id"],),
+    ).fetchone()
+    return {
+        "duration_sec": row["duration_sec"],
+        "segments": seg_count,
+        "thumb_path": thumb["thumb_path"] if thumb else None,
+    }
 
 
 def stats(conn: sqlite3.Connection) -> dict:

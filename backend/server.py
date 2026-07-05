@@ -73,6 +73,15 @@ def _choose_folder_applescript() -> str | None:
     return out.stdout.strip() or None
 
 
+def _is_within_roots(path: str, roots: list[str]) -> bool:
+    rp = os.path.realpath(path)
+    for root in roots:
+        rroot = os.path.realpath(root)
+        if rp == rroot or rp.startswith(rroot + os.sep):
+            return True
+    return False
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Video Library Search")
     manager = jobs.IndexManager()
@@ -110,8 +119,21 @@ def create_app() -> FastAPI:
         return manager.status()
 
     @app.get("/api/search")
-    def search(q: str = Query(min_length=1), k: int = config.DEFAULT_SEARCH_LIMIT):
-        results = search_mod.search(q, limit=min(max(k, 1), 100))
+    def search(
+        q: str = Query(min_length=1),
+        k: int = config.DEFAULT_SEARCH_LIMIT,
+        folder: str | None = None,
+    ):
+        if folder is not None:
+            folder = os.path.expanduser(folder)
+            conn = db.connect()
+            try:
+                roots = db.list_folders(conn)
+            finally:
+                conn.close()
+            if not _is_within_roots(folder, roots):
+                raise HTTPException(status_code=403, detail="Not an indexed folder")
+        results = search_mod.search(q, limit=min(max(k, 1), 100), folder=folder)
         for r in results:
             r["filename"] = os.path.basename(r["path"])
             r["exists"] = os.path.exists(r["path"])
@@ -126,6 +148,73 @@ def create_app() -> FastAPI:
         conn = db.connect()
         try:
             return {"folders": db.list_folders(conn), "stats": db.stats(conn)}
+        finally:
+            conn.close()
+
+    @app.post("/api/folders/remove")
+    def remove_folder(req: FolderRequest):
+        folder = os.path.expanduser(req.folder)
+        conn = db.connect()
+        try:
+            if folder not in db.list_folders(conn):
+                raise HTTPException(status_code=404, detail="Not a watched folder")
+        finally:
+            conn.close()
+        try:
+            manager.remove_folder(folder)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {"ok": True}
+
+    @app.get("/api/browse")
+    def browse(path: str | None = Query(default=None)):
+        conn = db.connect()
+        try:
+            roots = db.list_folders(conn)
+
+            if not path:
+                entries = [
+                    {
+                        "type": "folder",
+                        "name": os.path.basename(os.path.normpath(r)) or r,
+                        "path": r,
+                    }
+                    for r in roots
+                ]
+                entries.sort(key=lambda e: e["name"].lower())
+                return {"path": None, "parent": None, "entries": entries}
+
+            folder = os.path.expanduser(path)
+            if not _is_within_roots(folder, roots):
+                raise HTTPException(status_code=403, detail="Not an indexed folder")
+            if not os.path.isdir(folder):
+                raise HTTPException(status_code=404, detail="Folder not found")
+
+            dirs, video_files = [], []
+            for name in sorted(os.listdir(folder)):
+                if name.startswith("."):
+                    continue
+                full = os.path.join(folder, name)
+                if os.path.isdir(full):
+                    dirs.append({"type": "folder", "name": name, "path": full})
+                elif os.path.splitext(name)[1].lower() in config.VIDEO_EXTENSIONS:
+                    info = db.file_browse_info(conn, full)
+                    thumb = info["thumb_path"] if info else None
+                    video_files.append({
+                        "type": "file",
+                        "name": name,
+                        "path": full,
+                        "indexed": info is not None,
+                        "duration_sec": info["duration_sec"] if info else None,
+                        "segments": info["segments"] if info else 0,
+                        "thumb_url": f"/thumbnails/{os.path.basename(thumb)}" if thumb else None,
+                    })
+
+            is_root = any(
+                os.path.realpath(folder) == os.path.realpath(r) for r in roots
+            )
+            parent = None if is_root else os.path.dirname(folder)
+            return {"path": folder, "parent": parent, "entries": dirs + video_files}
         finally:
             conn.close()
 
