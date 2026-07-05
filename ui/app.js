@@ -394,7 +394,13 @@ async function addFolder() {
   const btn = $("add-folder-btn");
   btn.disabled = true;
   try {
-    const { folder } = await api("/api/select-folder", { method: "POST" });
+    const picked = await api("/api/select-folder", { method: "POST" });
+    let folder = picked.folder;
+    if (!folder && picked.manual) {
+      // No native folder dialog available (e.g. Linux without zenity).
+      folder = window.prompt("Enter the full path of a folder of videos to index:");
+      if (folder) folder = folder.trim();
+    }
     if (folder) {
       await api("/api/index", { method: "POST", body: JSON.stringify({ folder }) });
       state.hasFolders = true;

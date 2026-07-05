@@ -7,8 +7,10 @@ Run in dev mode with:
 import argparse
 import logging
 import os
+import shutil
 import socket
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -27,6 +29,10 @@ log = logging.getLogger(__name__)
 window_provider = None
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+
+
+def _is_mac() -> bool:
+    return sys.platform == "darwin"
 
 
 class FolderRequest(BaseModel):
@@ -60,6 +66,29 @@ def _open_in_quicktime_at(path: str, start_sec: float) -> bool:
         return False
 
 
+def _open_at_timestamp_linux(path: str, start_sec: float) -> bool:
+    """Open seeked to a timestamp with mpv or VLC, whichever is installed.
+    Detached so a long-running player never blocks the request."""
+    mpv = shutil.which("mpv")
+    vlc = shutil.which("vlc") if mpv is None else None
+    if mpv:
+        cmd = [mpv, f"--start={start_sec:.2f}", path]
+    elif vlc:
+        cmd = [vlc, f"--start-time={start_sec:.2f}", path]
+    else:
+        return False
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except OSError:
+        return False
+
+
 def _choose_folder_applescript() -> str | None:
     script = 'POSIX path of (choose folder with prompt "Choose a folder of videos to index")'
     try:
@@ -71,6 +100,30 @@ def _choose_folder_applescript() -> str | None:
     if out.returncode != 0:  # user cancelled
         return None
     return out.stdout.strip() or None
+
+
+def _choose_folder_zenity() -> dict:
+    """Folder picker via zenity. When zenity is unavailable, report
+    manual=True so the UI can fall back to a typed path."""
+    zenity = shutil.which("zenity")
+    if zenity is None:
+        return {"folder": None, "manual": True}
+    try:
+        out = subprocess.run(
+            [zenity, "--file-selection", "--directory"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {"folder": None, "manual": True}
+    if out.returncode != 0:
+        # Exit 1 with silent stderr is a user cancel; anything else
+        # (e.g. no display) means the dialog never showed.
+        if out.returncode == 1 and not out.stderr.strip():
+            return {"folder": None}
+        return {"folder": None, "manual": True}
+    return {"folder": out.stdout.strip() or None}
 
 
 def _is_within_roots(path: str, roots: list[str]) -> bool:
@@ -102,8 +155,10 @@ def create_app() -> FastAPI:
     def select_folder():
         if window_provider is not None:
             folder = window_provider.choose_folder()
-        else:
+        elif _is_mac():
             folder = _choose_folder_applescript()
+        else:
+            return _choose_folder_zenity()  # may carry manual=True
         return {"folder": folder}  # null when the user cancels
 
     @app.post("/api/index")
@@ -260,18 +315,23 @@ def create_app() -> FastAPI:
     def open_file(req: PathRequest):
         if not os.path.exists(req.path):
             raise HTTPException(status_code=404, detail="File no longer exists")
-        if req.start_sec and req.start_sec > 0 and _open_in_quicktime_at(
-            req.path, req.start_sec
-        ):
-            return {"ok": True, "seeked": True}
-        subprocess.run(["open", req.path], check=False)
+        if req.start_sec and req.start_sec > 0:
+            seek = _open_in_quicktime_at if _is_mac() else _open_at_timestamp_linux
+            if seek(req.path, req.start_sec):
+                return {"ok": True, "seeked": True}
+        opener = "open" if _is_mac() else "xdg-open"
+        subprocess.run([opener, req.path], check=False)
         return {"ok": True, "seeked": False}
 
     @app.post("/api/reveal")
     def reveal_file(req: PathRequest):
         if not os.path.exists(req.path):
             raise HTTPException(status_code=404, detail="File no longer exists")
-        subprocess.run(["open", "-R", req.path], check=False)
+        if _is_mac():
+            subprocess.run(["open", "-R", req.path], check=False)
+        else:
+            # xdg-open can't highlight a file; opening the parent dir is close.
+            subprocess.run(["xdg-open", os.path.dirname(req.path)], check=False)
         return {"ok": True}
 
     @app.get("/thumbnails/{name}")
