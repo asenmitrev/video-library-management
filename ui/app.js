@@ -175,9 +175,11 @@ async function loadBrowse(path) {
 
 function renderBrowse(data) {
   state.browseParent = data.parent;
+  state.browseRoot = data.root || null;
   $("browse-path").textContent = data.path || "Indexed folders";
   $("browse-path").title = data.path || "";
   $("browse-up-btn").classList.toggle("hidden", data.path === null);
+  $("browse-remove-btn").classList.toggle("hidden", !state.browseRoot);
 
   const grid = $("browse-grid");
   grid.innerHTML = "";
@@ -418,15 +420,27 @@ function renderFolderList(folders) {
   }
 }
 
-async function removeFolder(folder) {
-  if (!confirm(`Stop watching this folder and remove its indexed videos from the library?\n\n${folder}`)) return;
+async function removeFolderRequest(folder) {
+  if (!confirm(`Stop watching this folder and remove its indexed videos from the library?\n\n${folder}`)) return false;
   try {
     await api("/api/folders/remove", { method: "POST", body: JSON.stringify({ folder }) });
-    await refreshSettingsInfo();
-    refreshLibraryInfo();
+    return true;
   } catch (err) {
     alert(`Could not remove folder: ${err.message}`);
+    return false;
   }
+}
+
+async function removeFolder(folder) {
+  if (!(await removeFolderRequest(folder))) return;
+  await refreshSettingsInfo();
+  refreshLibraryInfo();
+}
+
+async function removeFolderFromBrowse(folder) {
+  if (!(await removeFolderRequest(folder))) return;
+  refreshLibraryInfo();
+  loadBrowse(null);
 }
 
 async function openSettings() {
@@ -467,6 +481,9 @@ $("reset-btn").addEventListener("click", resetLibrary);
 $("tab-search").addEventListener("click", () => showTab("search"));
 $("tab-browse").addEventListener("click", () => showTab("browse"));
 $("browse-up-btn").addEventListener("click", () => loadBrowse(state.browseParent));
+$("browse-remove-btn").addEventListener("click", () => {
+  if (state.browseRoot) removeFolderFromBrowse(state.browseRoot);
+});
 $("clear-scope-btn").addEventListener("click", () => {
   setSearchScope(null);
   if (state.lastQuery) runSearch(state.lastQuery);

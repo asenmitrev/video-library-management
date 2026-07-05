@@ -74,12 +74,17 @@ def _choose_folder_applescript() -> str | None:
 
 
 def _is_within_roots(path: str, roots: list[str]) -> bool:
+    return _find_root(path, roots) is not None
+
+
+def _find_root(path: str, roots: list[str]) -> str | None:
+    """The watched root folder (as stored in the DB) that contains path."""
     rp = os.path.realpath(path)
     for root in roots:
         rroot = os.path.realpath(root)
         if rp == rroot or rp.startswith(rroot + os.sep):
-            return True
-    return False
+            return root
+    return None
 
 
 def create_app() -> FastAPI:
@@ -185,7 +190,8 @@ def create_app() -> FastAPI:
                 return {"path": None, "parent": None, "entries": entries}
 
             folder = os.path.expanduser(path)
-            if not _is_within_roots(folder, roots):
+            root = _find_root(folder, roots)
+            if root is None:
                 raise HTTPException(status_code=403, detail="Not an indexed folder")
             if not os.path.isdir(folder):
                 raise HTTPException(status_code=404, detail="Folder not found")
@@ -210,11 +216,14 @@ def create_app() -> FastAPI:
                         "thumb_url": f"/thumbnails/{os.path.basename(thumb)}" if thumb else None,
                     })
 
-            is_root = any(
-                os.path.realpath(folder) == os.path.realpath(r) for r in roots
-            )
+            is_root = os.path.realpath(folder) == os.path.realpath(root)
             parent = None if is_root else os.path.dirname(folder)
-            return {"path": folder, "parent": parent, "entries": dirs + video_files}
+            return {
+                "path": folder,
+                "parent": parent,
+                "root": root,
+                "entries": dirs + video_files,
+            }
         finally:
             conn.close()
 
