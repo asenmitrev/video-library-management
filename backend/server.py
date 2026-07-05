@@ -81,8 +81,7 @@ def _find_root(path: str, roots: list[str]) -> str | None:
     """The watched root folder (as stored in the DB) that contains path."""
     rp = os.path.realpath(path)
     for root in roots:
-        rroot = os.path.realpath(root)
-        if rp == rroot or rp.startswith(rroot + os.sep):
+        if db.path_is_within(rp, os.path.realpath(root)):
             return root
     return None
 

@@ -421,7 +421,7 @@ function renderFolderList(folders) {
 }
 
 async function removeFolderRequest(folder) {
-  if (!confirm(`Stop watching this folder and remove its indexed videos from the library?\n\n${folder}`)) return false;
+  if (!confirm(`Stop watching this folder and remove its indexed videos from the library? Videos also covered by another watched folder will be kept.\n\n${folder}`)) return false;
   try {
     await api("/api/folders/remove", { method: "POST", body: JSON.stringify({ folder }) });
     return true;

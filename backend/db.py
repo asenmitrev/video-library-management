@@ -61,6 +61,15 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def path_is_within(path: str, folder: str) -> bool:
+    """True if `path` is `folder` itself or lives under it.
+
+    Prefix matching is done in Python (not SQL LIKE) since folder paths can
+    contain '%'/'_' which are LIKE wildcards.
+    """
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
 def get_file(conn: sqlite3.Connection, path: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM files WHERE path = ?", (path,)).fetchone()
 
@@ -141,8 +150,7 @@ def search(
         (query_embedding.astype(np.float32).tobytes(), fetch_k),
     ).fetchall()
     if folder is not None:
-        prefix = folder.rstrip(os.sep) + os.sep
-        rows = [r for r in rows if r["path"] == folder or r["path"].startswith(prefix)]
+        rows = [r for r in rows if path_is_within(r["path"], folder)]
     rows = rows[:limit]
     return [
         {
@@ -171,17 +179,19 @@ def list_folders(conn: sqlite3.Connection) -> list[str]:
 
 
 def remove_folder(conn: sqlite3.Connection, path: str) -> list[str]:
-    """Forget a watched folder and delete everything indexed under it.
+    """Forget a watched folder and delete indexed data under it, except
+    anything still covered by another watched folder (e.g. a nested folder
+    that remains watched after its parent is removed).
 
-    Returns thumbnail paths to clean up. Prefix matching is done in Python
-    (as in `search`) rather than SQL LIKE, since folder paths can contain
-    '%'/'_' which are LIKE wildcards.
+    Returns thumbnail paths to clean up.
     """
-    prefix = path.rstrip(os.sep) + os.sep
+    remaining = [f for f in list_folders(conn) if f != path]
     rows = conn.execute("SELECT id, path FROM files").fetchall()
     thumbs = []
     for r in rows:
-        if r["path"] == path or r["path"].startswith(prefix):
+        if path_is_within(r["path"], path) and not any(
+            path_is_within(r["path"], f) for f in remaining
+        ):
             thumbs.extend(remove_file(conn, r["id"]))
     conn.execute("DELETE FROM folders WHERE path = ?", (path,))
     conn.commit()
