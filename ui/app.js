@@ -68,7 +68,7 @@ function fmtBytes(n) {
 function relevanceDots(score, topScore) {
   const ratio = topScore > 0 ? score / topScore : 0;
   const filled = Math.max(1, Math.round(ratio * 5));
-  return "●".repeat(filled) + "○".repeat(5 - filled);
+  return "▮".repeat(filled) + "▯".repeat(5 - filled);
 }
 
 function showEmpty(title, hint) {
