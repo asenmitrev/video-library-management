@@ -17,12 +17,14 @@
   </div>
 </header>
 
-<div id="progress-banner" class="hidden">
+<div id="progress-banner" class="hidden" role="button" tabindex="0" aria-expanded="false" title="Click for details on what indexing is doing right now">
   <div class="progress-text">
     <span id="progress-label">Indexing…</span>
     <span id="progress-detail"></span>
+    <span id="progress-chevron" class="progress-chevron">▾</span>
   </div>
   <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+  <div id="progress-phase" class="progress-phase hidden"></div>
 </div>
 
 <main>

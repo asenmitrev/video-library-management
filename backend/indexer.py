@@ -23,6 +23,13 @@ class IndexProgress:
     started_at: float | None = None
     error: str | None = None
     errors: list[str] = field(default_factory=list)
+    # Sub-progress within current_file: phase is one of
+    # detecting_scenes | extracting_frames | embedding, or None between
+    # files. For detecting_scenes, current/total are seconds into the
+    # video; for the other two, they're counts of segments/frames done.
+    phase: str | None = None
+    phase_current: int = 0
+    phase_total: int = 0
 
     def as_dict(self) -> dict:
         d = self.__dict__.copy()
@@ -59,14 +66,24 @@ def prune_missing(conn) -> int:
     return removed
 
 
-def index_file(conn, path: str) -> int:
+def index_file(conn, path: str, progress: IndexProgress | None = None) -> int:
     """Index one video; returns the number of segments stored."""
     st = os.stat(path)
-    segments = frames.extract_segments(path)
+
+    def on_phase(phase, current, total):
+        if progress is not None:
+            progress.phase = phase
+            progress.phase_current = current
+            progress.phase_total = total
+
+    segments = frames.extract_segments(path, on_phase=on_phase)
     if not segments:
         raise RuntimeError("no frames could be extracted")
 
-    embeddings = embedder.embed_images([s.frame for s in segments])
+    embeddings = embedder.embed_images(
+        [s.frame for s in segments],
+        on_progress=lambda current, total: on_phase("embedding", current, total),
+    )
     duration = frames.video_duration_sec(path)
     thumbs_dir = config.thumbnails_dir()
 
@@ -115,7 +132,7 @@ def index_folder(
                 continue
             progress.current_file = path
             try:
-                n = index_file(conn, path)
+                n = index_file(conn, path, progress=progress)
                 log.info("Indexed %s (%d segments)", path, n)
                 progress.done_files += 1
             except Exception as exc:
@@ -123,6 +140,9 @@ def index_folder(
                 progress.failed_files += 1
                 progress.errors.append(f"{path}: {exc}")
             finally:
+                progress.phase = None
+                progress.phase_current = 0
+                progress.phase_total = 0
                 embedder.release_cache()
 
         progress.current_file = None

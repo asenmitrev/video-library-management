@@ -9,6 +9,7 @@ const state = {
   lastQuery: null,
   pollTimer: null,
   searchFolder: null,
+  progressExpanded: false,
 };
 
 // ---------- helpers ----------
@@ -40,6 +41,21 @@ function fmtEta(sec) {
   if (sec < 60) return "under a minute left";
   if (sec < 3600) return `about ${Math.round(sec / 60)} min left`;
   return `about ${(sec / 3600).toFixed(1)} h left`;
+}
+
+function fmtPhase(st) {
+  switch (st.phase) {
+    case "detecting_scenes":
+      return st.phase_total
+        ? `Detecting scene changes… ${fmtTime(st.phase_current)} / ${fmtTime(st.phase_total)}`
+        : "Detecting scene changes…";
+    case "extracting_frames":
+      return `Extracting frames… ${st.phase_current}/${st.phase_total}`;
+    case "embedding":
+      return `Embedding frames into the search index… ${st.phase_current}/${st.phase_total}`;
+    default:
+      return st.current_file ? "Reading file…" : "Scanning for video files…";
+  }
 }
 
 function fmtBytes(n) {
@@ -339,6 +355,12 @@ async function pollStatus() {
     (st.eta_sec != null ? ` — ${fmtEta(st.eta_sec)}` : "");
   $("progress-detail").textContent = st.current_file
     ? st.current_file.split("/").pop() : "";
+
+  banner.setAttribute("aria-expanded", String(state.progressExpanded));
+  $("progress-phase").classList.toggle("hidden", !state.progressExpanded);
+  if (state.progressExpanded) {
+    $("progress-phase").textContent = fmtPhase(st);
+  }
 }
 
 function startPolling() {
@@ -487,6 +509,18 @@ $("browse-remove-btn").addEventListener("click", () => {
 $("clear-scope-btn").addEventListener("click", () => {
   setSearchScope(null);
   if (state.lastQuery) runSearch(state.lastQuery);
+});
+$("progress-banner").addEventListener("click", () => {
+  if (!state.indexing) return;
+  state.progressExpanded = !state.progressExpanded;
+  pollStatus();
+});
+$("progress-banner").addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  ev.preventDefault();
+  if (!state.indexing) return;
+  state.progressExpanded = !state.progressExpanded;
+  pollStatus();
 });
 
 refreshLibraryInfo();

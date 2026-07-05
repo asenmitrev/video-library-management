@@ -63,10 +63,12 @@ button:disabled { opacity: 0.5; cursor: default; }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
+  cursor: pointer;
 }
-#progress-banner.error { color: var(--danger); }
+#progress-banner.error { color: var(--danger); cursor: default; }
 .progress-text {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.35rem;
@@ -76,6 +78,20 @@ button:disabled { opacity: 0.5; cursor: default; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.progress-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+#progress-banner[aria-expanded="true"] .progress-chevron { transform: rotate(180deg); }
+#progress-banner.error .progress-chevron { display: none; }
+.progress-phase {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 .progress-track {
   height: 5px;

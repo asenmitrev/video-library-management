@@ -196,17 +196,20 @@ def _as_tensor(features) -> torch.Tensor:
 
 
 @torch.no_grad()
-def embed_images(images: list[Image.Image]) -> np.ndarray:
+def embed_images(images: list[Image.Image], on_progress=None) -> np.ndarray:
     """Return L2-normalized float32 embeddings, shape (n, EMBEDDING_DIM)."""
     load_model()
     out = []
-    for i in range(0, len(images), config.EMBED_BATCH_SIZE):
+    total = len(images)
+    for i in range(0, total, config.EMBED_BATCH_SIZE):
         batch = images[i : i + config.EMBED_BATCH_SIZE]
         with _lock:
             inputs = _processor(images=batch, return_tensors="pt").to(device())
             feats = _as_tensor(_model.get_image_features(**inputs))
             feats = torch.nn.functional.normalize(feats, dim=-1)
             out.append(feats.float().cpu().numpy())
+        if on_progress:
+            on_progress(min(i + len(batch), total), total)
     return np.concatenate(out, axis=0)
 
 
