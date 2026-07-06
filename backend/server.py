@@ -182,6 +182,7 @@ def create_app() -> FastAPI:
         q: str = Query(min_length=1),
         k: int = config.DEFAULT_SEARCH_LIMIT,
         folder: str | None = None,
+        offset: int = 0,
     ):
         if folder is not None:
             folder = os.path.expanduser(folder)
@@ -192,7 +193,10 @@ def create_app() -> FastAPI:
                 conn.close()
             if not _is_within_roots(folder, roots):
                 raise HTTPException(status_code=403, detail="Not an indexed folder")
-        results = search_mod.search(q, limit=min(max(k, 1), 100), folder=folder)
+        offset = min(max(offset, 0), 10_000)
+        results, has_more = search_mod.search(
+            q, limit=min(max(k, 1), 100), folder=folder, offset=offset
+        )
         for r in results:
             r["filename"] = os.path.basename(r["path"])
             r["exists"] = os.path.exists(r["path"])
@@ -200,7 +204,12 @@ def create_app() -> FastAPI:
             r["thumb_url"] = (
                 f"/thumbnails/{os.path.basename(thumb)}" if thumb else None
             )
-        return {"query": q, "results": results}
+        return {
+            "query": q,
+            "results": results,
+            "offset": offset,
+            "has_more": has_more,
+        }
 
     @app.get("/api/folders")
     def folders():

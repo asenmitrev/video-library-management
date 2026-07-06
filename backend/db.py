@@ -134,10 +134,15 @@ def search(
     query_embedding: np.ndarray,
     limit: int,
     folder: str | None = None,
-) -> list[dict]:
+    offset: int = 0,
+) -> tuple[list[dict], bool]:
+    """Returns (results, has_more) — has_more is True when at least one
+    match exists past the requested page."""
+    # Fetch one row past the page so has_more needs no separate count query.
+    wanted = offset + limit + 1
     # Folder scoping isn't pushed into the ANN index — over-fetch a wider
     # candidate set and filter by path prefix in Python instead.
-    fetch_k = limit if folder is None else min(max(limit * 25, 200), 2000)
+    fetch_k = wanted if folder is None else min(max(wanted * 25, 200), 2000)
     rows = conn.execute(
         """
         SELECT s.id, f.path, s.start_sec, s.end_sec, s.thumb_path, v.distance
@@ -151,8 +156,9 @@ def search(
     ).fetchall()
     if folder is not None:
         rows = [r for r in rows if path_is_within(r["path"], folder)]
-    rows = rows[:limit]
-    return [
+    has_more = len(rows) > offset + limit
+    rows = rows[offset : offset + limit]
+    results = [
         {
             "segment_id": r["id"],
             "path": r["path"],
@@ -164,6 +170,7 @@ def search(
         }
         for r in rows
     ]
+    return results, has_more
 
 
 def add_folder(conn: sqlite3.Connection, path: str) -> None:

@@ -2,11 +2,14 @@
 
 const $ = (id) => document.getElementById(id);
 
+const PAGE_SIZE = 12;
+
 const state = {
   indexing: false,
   hasFolders: false,
   totalSegments: 0,
   lastQuery: null,
+  page: 0,
   pollTimer: null,
   searchFolder: null,
   progressExpanded: false,
@@ -80,17 +83,25 @@ function hideEmpty() { $("empty-state").classList.add("hidden"); }
 
 // ---------- search ----------
 
-async function runSearch(query) {
+async function runSearch(query, page = 0) {
   state.lastQuery = query;
+  state.page = page;
   $("status-line").textContent = "Searching…";
   try {
-    let url = `/api/search?q=${encodeURIComponent(query)}&k=12`;
+    let url = `/api/search?q=${encodeURIComponent(query)}&k=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
     if (state.searchFolder) url += `&folder=${encodeURIComponent(state.searchFolder)}`;
     const data = await api(url);
     renderResults(data);
   } catch (err) {
     $("status-line").textContent = `Search failed: ${err.message}`;
   }
+}
+
+function goToPage(page) {
+  if (!state.lastQuery || page < 0) return;
+  runSearch(state.lastQuery, page).then(() => {
+    $("search-view").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function setSearchScope(folder) {
@@ -111,8 +122,15 @@ function renderResults(data) {
   const grid = $("results");
   grid.innerHTML = "";
   hideEmpty();
+  $("pagination").classList.add("hidden");
 
   if (!data.results.length) {
+    // The index can shrink between pages (folder removed, re-scan) — fall
+    // back to the first page rather than showing "no results".
+    if (state.page > 0) {
+      runSearch(data.query, 0);
+      return;
+    }
     $("status-line").textContent = "";
     if (!state.hasFolders) {
       showEmpty("No folders in your library yet",
@@ -130,9 +148,21 @@ function renderResults(data) {
   }
 
   const top = data.results[0].score;
-  $("status-line").textContent = state.indexing
-    ? `${data.results.length} results (indexing still running — more videos become searchable as it progresses)`
+  const first = data.offset + 1;
+  const last = data.offset + data.results.length;
+  const count = data.has_more || state.page > 0
+    ? `Results ${first}–${last}`
     : `${data.results.length} results`;
+  $("status-line").textContent = state.indexing
+    ? `${count} (indexing still running — more videos become searchable as it progresses)`
+    : count;
+
+  if (data.has_more || state.page > 0) {
+    $("pagination").classList.remove("hidden");
+    $("prev-page-btn").disabled = state.page === 0;
+    $("next-page-btn").disabled = !data.has_more;
+    $("page-label").textContent = `Page ${state.page + 1}`;
+  }
 
   for (const r of data.results) {
     const card = document.createElement("div");
@@ -484,7 +514,9 @@ async function resetLibrary() {
     await api("/api/reset", { method: "POST" });
     $("settings-dialog").close();
     state.lastQuery = null;
+    state.page = 0;
     $("results").innerHTML = "";
+    $("pagination").classList.add("hidden");
     refreshLibraryInfo();
   } catch (err) {
     alert(`Could not clear: ${err.message}`);
@@ -498,6 +530,8 @@ $("search-form").addEventListener("submit", (ev) => {
   const q = $("search-input").value.trim();
   if (q) runSearch(q);
 });
+$("prev-page-btn").addEventListener("click", () => goToPage(state.page - 1));
+$("next-page-btn").addEventListener("click", () => goToPage(state.page + 1));
 $("add-folder-btn").addEventListener("click", addFolder);
 $("rescan-btn").addEventListener("click", async () => {
   try { await api("/api/rescan", { method: "POST" }); }

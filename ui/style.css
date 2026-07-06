@@ -276,6 +276,20 @@ main { max-width: 1100px; margin: 0 auto; padding: 1.6rem 1.4rem 3rem; }
   gap: 1.1rem;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  margin: 1.6rem 0 0.6rem;
+}
+.pagination #page-label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  min-width: 4.5em;
+  text-align: center;
+}
+
 .result-card {
   background: var(--surface);
   border: 1.5px solid var(--line);

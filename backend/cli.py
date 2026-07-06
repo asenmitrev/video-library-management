@@ -33,7 +33,7 @@ def cmd_search(args):
     from . import search as search_mod
 
     t0 = time.time()
-    results = search_mod.search(args.query, limit=args.k)
+    results, has_more = search_mod.search(args.query, limit=args.k)
     dt = time.time() - t0
     if not results:
         print("No results (is anything indexed yet?)")
@@ -43,7 +43,8 @@ def cmd_search(args):
             f"{r['score']:.3f}  {r['path']}  "
             f"@ {r['start_sec']:.1f}s–{r['end_sec']:.1f}s"
         )
-    print(f"({len(results)} results in {dt:.2f}s)")
+    more = ", more available with a larger -k" if has_more else ""
+    print(f"({len(results)} results in {dt:.2f}s{more})")
 
 
 def cmd_status(args):
