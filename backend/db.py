@@ -7,7 +7,10 @@ Single local file. Tables:
 """
 
 import os
-import sqlite3
+try:
+    import pysqlite3 as sqlite3
+except ImportError:
+    import sqlite3
 from pathlib import Path
 
 import numpy as np

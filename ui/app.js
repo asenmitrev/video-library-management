@@ -81,6 +81,73 @@ function showEmpty(title, hint) {
 }
 function hideEmpty() { $("empty-state").classList.add("hidden"); }
 
+// ---------- in-browser player ----------
+
+const BROWSER_PLAYABLE = new Set([".mp4", ".mov", ".m4v", ".webm"]);
+
+function canPlayInBrowser(path) {
+  return BROWSER_PLAYABLE.has(osPathExt(path).toLowerCase());
+}
+
+function osPathExt(path) {
+  const dot = path.lastIndexOf(".");
+  return dot !== -1 ? path.substring(dot) : "";
+}
+
+function openPlayer(path, startSec) {
+  const video = $("player");
+  if (!canPlayInBrowser(path)) {
+    // Fallback: open in native player
+    const payload = { path, start_sec: startSec || undefined };
+    api("/api/open", { method: "POST", body: JSON.stringify(payload) })
+      .catch((e) => { $("status-line").textContent = e.message; });
+    return;
+  }
+  const url = `/api/video/stream?path=${encodeURIComponent(path)}`;
+  if (video.src === url && $("player-dialog").open) {
+    // Already showing same video — just seek
+    video.currentTime = startSec || 0;
+    video.play();
+    return;
+  }
+  video.dataset.path = path;
+  video.src = url;
+  video.removeAttribute("preload"); // let the browser fetch as needed
+  $("player-title").textContent = path.split("/").pop();
+  const seekOnce = () => {
+    if (startSec) {
+      video.currentTime = startSec;
+    }
+    video.play().catch(() => {});
+    video.removeEventListener("loadedmetadata", seekOnce);
+  };
+  video.addEventListener("loadedmetadata", seekOnce);
+  $("player-dialog").showModal();
+}
+
+function closePlayer() {
+  const video = $("player");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  $("player-dialog").close();
+}
+
+// Wire "Open externally" inside player — seeks to current playback position.
+$("player-open-native").addEventListener("click", () => {
+  const video = $("player");
+  const path = video.dataset.path;
+  api("/api/open", {
+    method: "POST",
+    body: JSON.stringify({ path, start_sec: video.currentTime })
+  }).catch((e) => { $("status-line").textContent = e.message; });
+});
+$("close-player").addEventListener("click", closePlayer);
+// Make Escape close the player cleanly
+$("player-dialog").addEventListener("cancel", (ev) => {
+  closePlayer();
+});
+
 // ---------- search ----------
 
 async function runSearch(query, page = 0) {
@@ -168,7 +235,7 @@ function renderResults(data) {
     const card = document.createElement("div");
     card.className = "result-card" + (r.exists ? "" : " missing");
     card.title = r.exists
-      ? `${r.path}\nClick to open in your video player`
+      ? `${r.path}\nClick to play${canPlayInBrowser(r.path) ? " in-browser" : " (opens in system player)"}`
       : `${r.path}\n(file is missing or its drive is disconnected)`;
 
     const thumb = r.thumb_url
@@ -190,10 +257,7 @@ function renderResults(data) {
 
     if (r.exists) {
       card.addEventListener("click", () => {
-        api("/api/open", {
-          method: "POST",
-          body: JSON.stringify({ path: r.path, start_sec: r.start_sec }),
-        }).catch((e) => { $("status-line").textContent = e.message; });
+        openPlayer(r.path, r.start_sec);
       });
     }
     card.querySelector(".reveal-link").addEventListener("click", (ev) => {
@@ -263,6 +327,7 @@ function renderBrowse(data) {
     }
 
     card.className = "result-card" + (e.indexed ? "" : " missing");
+    card.title = e.path;
     const thumb = e.thumb_url
       ? `<img src="${e.thumb_url}" alt="" loading="lazy">`
       : `<div class="no-thumb">🎞</div>`;
@@ -280,8 +345,7 @@ function renderBrowse(data) {
     card.querySelector(".card-title").textContent = e.name;
 
     card.addEventListener("click", () => {
-      api("/api/open", { method: "POST", body: JSON.stringify({ path: e.path }) })
-        .catch((err) => { $("browse-status").textContent = err.message; });
+      openPlayer(e.path, 0);
     });
     card.querySelector(".reveal-link").addEventListener("click", (ev) => {
       ev.stopPropagation();
