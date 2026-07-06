@@ -375,8 +375,48 @@ dialog {
   margin: auto;
   box-shadow: 6px 6px 0 var(--shadow);
 }
-dialog::backdrop { background: rgba(20, 22, 26, 0.45); }
+dialog::backdrop { background: rgba(20, 22, 26, 0.75); }
 dialog h2 { font-size: 1rem; margin-bottom: 1rem; }
+
+/* ---------- player dialog ---------- */
+
+#player-dialog {
+  max-width: 900px;
+  width: 95%;
+  padding: 0;
+  overflow: hidden;
+}
+#player-dialog video {
+  display: block;
+  width: 100%;
+  max-height: 75vh;
+  background: #000;
+}
+.player-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--panel);
+  border-top: 1.5px solid var(--line);
+  font-size: 0.78rem;
+}
+#player-title {
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.player-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.player-actions button {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.65rem;
+}
 dialog dl { font-size: 0.85rem; }
 dialog dt {
   color: var(--muted);

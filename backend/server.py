@@ -14,7 +14,7 @@ import sys
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -333,6 +333,24 @@ def create_app() -> FastAPI:
             # xdg-open can't highlight a file; opening the parent dir is close.
             subprocess.run(["xdg-open", os.path.dirname(req.path)], check=False)
         return {"ok": True}
+
+    @app.get("/api/video/stream")
+    def stream_video(path: str):
+        """Serve a video file with HTTP Range support for seeking.
+
+        FastAPI's FileResponse handles Range headers automatically so the
+        browser can seek efficiently without downloading the whole file."""
+        resolved = os.path.realpath(path)
+        if not os.path.isfile(resolved):
+            raise HTTPException(status_code=404, detail="File not found")
+        ext = os.path.splitext(resolved)[1].lower()
+        media_type = {
+            ".mp4": "video/mp4",
+            ".mov": "video/quicktime",
+            ".m4v": "video/mp4",
+            ".webm": "video/webm",
+        }.get(ext, "video/mp4")
+        return FileResponse(resolved, media_type=media_type)
 
     @app.get("/thumbnails/{name}")
     def thumbnail(name: str):

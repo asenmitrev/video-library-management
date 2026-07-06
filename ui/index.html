@@ -78,6 +78,17 @@
   <div id="installing-detail" class="muted" style="margin-top: 0.5rem; font-size: 0.8rem;"></div>
 </dialog>
 
+<dialog id="player-dialog">
+  <video id="player" controls playsinline preload="metadata"></video>
+  <div class="player-bar">
+    <span id="player-title" class="muted"></span>
+    <span class="player-actions">
+      <button id="player-open-native" title="Open in system player at this timestamp">Open externally ↗</button>
+      <button id="close-player">Close</button>
+    </span>
+  </div>
+</dialog>
+
 <dialog id="settings-dialog">
   <h2>Settings</h2>
   <dl>
